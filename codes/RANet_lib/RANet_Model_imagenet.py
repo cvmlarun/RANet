@@ -33,10 +33,10 @@ class ResNet101(nn.Module):
         super(ResNet101, self).__init__()
         self.with_relu = True
         self.base_model = get_imagenet_model('resnet_ins101', pretrained=pretrained)
-        if not(fc):
-            self.base_model._modules.pop('fc')
+#        if not(fc):
+#            self.base_model._modules.pop('fc')
 
-    def res_forward(self, x, fc=False):
+    def res_forward(self, x):
         res_features = []
         x = self.base_model.conv1(x)
         x = self.base_model.bn1(x)
@@ -52,11 +52,10 @@ class ResNet101(nn.Module):
         res_features.append(x)
         x = self.base_model.layer4(x)
         res_features.append(x)
-        if not(fc):
-            return res_features
+        return res_features
         x = self.base_model.avgpool(x)
         x = x.view(x.size(0), -1)
-        x = self.base_model.fc(x)
+        #x = self.base_model.fc(x)
         res_features.append(x)
         return res_features
     def res_forward_part(self, x, block):

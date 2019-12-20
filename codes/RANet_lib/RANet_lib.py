@@ -13,7 +13,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torch.nn import functional as F
-
+import timeit
 
 
 '''
@@ -91,8 +91,8 @@ def test_SVOS_Video_batch(data_loader, model, save_root, threshold=0.5, single_o
                             Image_names=Image_names, Sizes=[0 for i in range(batchsize + 1)], batchsize=batchsize, Flags=[[] for i in range(batchsize)],
                             Img_flags=[[] for i in range(batchsize)])
         return Frames_batch
-    batchsize = 4
-    max_iter = 10
+    batchsize = 1
+    max_iter =  4
     torch.set_grad_enabled(False)
     _ = None
     Frames_batch = init_Frame(batchsize)
@@ -113,7 +113,8 @@ def test_SVOS_Video_batch(data_loader, model, save_root, threshold=0.5, single_o
         Key_frame = F.upsample(bbox_crop(Key_frame[0], bbox).unsqueeze(0), size, mode='bilinear')
         Key_mask = F.upsample(bbox_crop(init_Key_mask[0], bbox).unsqueeze(0), size)
         S_name = batch[2][0][0]
-        Key_feature = model(_, Key_frame, _, _, mode='first')[0]
+        #Key_feature = model(_, Key_frame, _, _, 'first')[0]
+        Key_feature = model.forward_first(Key_frame)[0]
         Frames = batch[0]
         Img_sizes = batch[3]
 
@@ -137,19 +138,23 @@ def test_SVOS_Video_batch(data_loader, model, save_root, threshold=0.5, single_o
             for idx in range(batchsize):
                 Frames_batch['Flags'][idx].append(False)
             Frames_batch['Sizes'][batchsize] = min(Frames_batch['Sizes'][0:batchsize - 1])
+            start_time = timeit.default_timer() 
             Out_Mask = process_SVOS_batch(Frames_batch, model, threshold, single_object, pre_first_frame)
+            end_time = timeit.default_timer()
+            print("Time ", end_time - start_time)
             Image_names = Frames_batch['Image_names']
             Img_sizes = Frames_batch['Img_sizes']
             Img_flags = Frames_batch['Img_flags']
             for Masks, Names, Sizes, Flags in zip(Out_Mask, Image_names, Img_sizes, Img_flags):
                 for mask, name, ss, flag in zip(Masks, Names, Sizes, Flags):
+                    print("image path: ", name)
                     folder_name, fname = name.split('/')[-2::]
                     save_path = save_root + '/' + folder_name + '/'
                     if not (os.path.exists(save_path)):
                         os.mkdir(save_path)
                     if flag == 1:
                         print(folder_name)
-                        I0 = Image.open(name)
+                    I0 = Image.open(name)
                     if I0.size[0] > 864:
                         t = min(864.0 / I0.size[0], 480.0 / I0.size[1])
                         ms = [int(864.0 / t + 0.5), int(480.0 / t + 0.5)]
@@ -157,6 +162,13 @@ def test_SVOS_Video_batch(data_loader, model, save_root, threshold=0.5, single_o
                         ms = [864, 480]
                     ss = [float(ss[0].cpu().numpy()), float(ss[1].cpu().numpy())]
                     img = Image.fromarray((mask - 1).astype('float32')).convert('P').resize(ms)
+                    
+                    #img_mask = Image.fromarray((mask-1).astype('float32')).convert('RGB').resize([854,480])
+                    
+                    #blend_image = Image.blend(I0 ,img_mask, 0.5)
+                    #blend_image.crop(((ms[0] - ss[0]) / 2, (ms[1] - ss[1]) / 2, (ms[0] - ss[0]) / 2 + ss[0],
+                    #    (ms[1] - ss[1]) / 2 + ss[1])).resize(ss).save(save_path + fname.split('.')[0] + add_name + '.jpg')
+
                     img.putpalette(palette)
                     img.crop(((ms[0] - ss[0]) / 2, (ms[1] - ss[1]) / 2, (ms[0] - ss[0]) / 2 + ss[0],
                         (ms[1] - ss[1]) / 2 + ss[1])).resize(ss).save(save_path + fname.split('.')[0] + add_name + '.png', palette=palette)
@@ -177,6 +189,7 @@ def process_SVOS_batch(Frames_batch, model, threshold=0.5, single_object=False, 
         if len(msks) == objs_ids_num:
             return P + 1
         return P
+    #print(Frames_batch)
     Frames = Frames_batch['Frames']
     Key_features = Frames_batch['Key_features']
     Init_masks = Frames_batch['Init_Key_masks']
@@ -234,8 +247,12 @@ def process_SVOS_batch(Frames_batch, model, threshold=0.5, single_object=False, 
             else:
                 Flags[i] = tmp
                 tmp +=1
-        inputs = [torch.cat(Img)[index_select], torch.cat(KFea)[index_select], torch.cat(KMsk)[index_select], torch.cat(PMsk)[index_select]]
-        outputs, _ = model(*inputs)
+        inputs = [torch.cat(Img)[index_select], torch.cat(KFea)[index_select], torch.cat(KMsk)[index_select], torch.cat(PMsk)[index_select], 'not']
+        print("inputs[0] :", inputs[0].size(),"inputs[1] :", inputs[1].size(),"inputs[2] :", inputs[2].size(),)
+        #outputs, _ = model(*inputs)
+        Kernel, Feature, base_features1, msk_p, m = model(*inputs)
+        Correlation = model.correlate(Kernel, Feature)
+        outputs, _ = model.forward_post(Correlation, base_features1, msk_p, m)
         Msk2 = [[] for i in range(batchsize)]
         Output = [None if Flags[ids] == -1 else outputs[0][Flags[ids]] for ids in range(batchsize)]
         for batch, (out, crop_size) in enumerate(zip(Output, Crop_size)):

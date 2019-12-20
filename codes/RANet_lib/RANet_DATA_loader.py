@@ -75,6 +75,7 @@ class DAVIS2017_loader(data.Dataset):
                     Set = '/test-dev.txt'
                 with open(self.root + 'ImageSets/' + self.years + Set) as f:
                     SetsTxts = f.readlines()
+                    print("Reading folders ", SetsTxts)
                 # if DP['mode'] in ['all', 'online_all']:
                 #     with open(self.root + 'ImageSets/' + self.years + '/val.txt') as f:
                 #         SetsTxts2 = f.readlines()
@@ -82,6 +83,7 @@ class DAVIS2017_loader(data.Dataset):
                 Dirs = [self.root + 'JPEGImages/480p/' + name[0:-1] for name in SetsTxts]
                 Dirs.sort()
                 for dir in Dirs:
+                    print("scanning DIR ", dir)
                     files = glob(dir + '/*.*')
                     files.sort()
                     if self.iter_mode == 'test':

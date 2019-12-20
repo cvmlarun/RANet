@@ -110,7 +110,7 @@ class RANet(ResNet101):
         super(RANet, self).__init__(with_relu=with_relu, pretrained=pretrained)
         self.fp16 = False
         self.net_type = type
-        self._init_net()
+        #self._init_net()
         self.p_1 = make_layer2(256, 256)
         self.res_1 = ResBlock2(256, 128, 1)
         self.p_2 = make_layer2(256, 128)
@@ -161,28 +161,30 @@ class RANet(ResNet101):
         #                              nn.Conv2d(16, 1, 1, bias=False), nn.ReLU())
 
     def Dtype(self, data):
-        if self.fp16:
-            return torch._C._TensorBase.half(data)
-        else:
-            return torch._C._TensorBase.float(data)
+        return data.float()
+#        if self.fp16:
+#            return torch._C._TensorBase.half(data)
+#        else:
+#            return torch._C._TensorBase.float(data)
+        
 
-    def _init_net(self):
-        if self.net_type == 'single_object':
-            self.forward = self.RANet_Single_forward_eval
-            print('Single-object mode')
-        elif self.net_type == 'multi_object':
-            self.forward = self.RANet_Multiple_forward_eval
-            print('Multi-object mode')
-
-    def set_type(self, type):
-        if self.net_type != 'single_object' and type == 'single_object':
-            self.forward = self.RANet_Single_forward_eval
-            print('Change to single-object mode')
-        elif self.net_type != 'multi_object' and type == 'multi_object':
-            self.forward = self.RANet_Multiple_forward_eval
-            print('Change to multi-object mode')
-        else:
-            pass
+#    def _init_net(self):
+#        if self.net_type == 'single_object':
+#            self.forward = self.RANet_Single_forward_eval
+#            print('Single-object mode')
+#        elif self.net_type == 'multi_object':
+#            self.forward = self.RANet_Multiple_forward_eval
+#            print('Multi-object mode')
+#
+#    def set_type(self, type):
+#        if self.net_type != 'single_object' and type == 'single_object':
+#            self.forward = self.RANet_Single_forward_eval
+#            print('Change to single-object mode')
+#        elif self.net_type != 'multi_object' and type == 'multi_object':
+#            self.forward = self.RANet_Multiple_forward_eval
+#            print('Change to multi-object mode')
+#        else:
+#            pass
 
     def corr_fun(self, Kernel_tmp, Feature, KERs=None):
         size = Kernel_tmp.size()
@@ -193,6 +195,8 @@ class RANet(ResNet101):
                 Kernel = KERs[0]
             corr = torch.nn.functional.conv2d(Feature, Kernel.contiguous())
             Kernel = Kernel.unsqueeze(0)
+            
+        
         else:
             CORR = []
             Kernel = []
@@ -230,48 +234,27 @@ class RANet(ResNet101):
         img = F.upsample_bilinear(img, size=crop_size[2::])
         msk = F.pad(img, (bbox[1], 864 - bbox[3], bbox[0], 480 - bbox[2],))
         return msk
+    
+    @torch.jit.export
+    def forward_first(self, Ker):
+        x2 = Ker
+        base_features2 = self.res_forward(x2)
+        Kernel_3 = f.normalize(f.max_pool2d(self.L3(base_features2[2]), 2))
+        Kernel_4 = f.normalize(self.L4(base_features2[3]))
+        Kernel_5 = f.normalize(f.upsample(self.L5(base_features2[4]), scale_factor=2, mode='bilinear'))
+        Kernel_tmp = f.normalize(self.L_g(torch.cat([Kernel_3, Kernel_4, Kernel_5], dim=1)))
 
-    def RANet_Single_forward_eval(self, x1, Ker, msk2, msk_p, mode=''):  # vxd  feature * msk *2  _feature_Rf
-        if mode in ['first', 'encoder']:
-            # Exact template features
-            x2 = Ker
-            base_features2 = self.res_forward(x2)
-            Kernel_3 = f.normalize(f.max_pool2d(self.L3(base_features2[2]), 2))
-            Kernel_4 = f.normalize(self.L4(base_features2[3]))
-            Kernel_5 = f.normalize(f.upsample(self.L5(base_features2[4]), scale_factor=2, mode='bilinear'))
-            Kernel_tmp = f.normalize(self.L_g(torch.cat([Kernel_3, Kernel_4, Kernel_5], dim=1)))
-            if mode == 'encoder':
-                return [Kernel_tmp]
-            Kernel_tmp = f.adaptive_avg_pool2d(Kernel_tmp, [15, 27])
-            return [Kernel_tmp]
-        if msk2.max() > 1:
-            msk2 = self.Dtype(msk2.ge(1.6))
-            msk_p = self.Dtype(msk_p.ge(1.6))
-        # Current frame feature
-        base_features1 = self.res_forward(x1)
-        Feature_3 = f.normalize(f.max_pool2d(self.L3(base_features1[2]), 2))
-        Feature_4 = f.normalize(self.L4(base_features1[3]))
-        Feature_5 = f.normalize(f.upsample(self.L5(base_features1[4]), scale_factor=2, mode='bilinear'))
-        Feature = f.normalize(self.L_g(torch.cat([Feature_3, Feature_4, Feature_5], dim=1)))
-
-        '''
-        Kernel_tmp = Ker
-        m = f.adaptive_avg_pool2d(msk2.detach(), Kernel_tmp.size()[-2::])
-        Kernel = Kernel_tmp * m.repeat(1, 512, 1, 1)
-        mb = (1 - m).ge(0.9).float()
-        Kernel_back = Kernel_tmp * mb.repeat(1, 512, 1, 1).float()
-        corr, Kerner = self.corr_fun(Kernel, Feature)
-        corr_b, Kerner_b = self.corr_fun(Kernel_back, Feature)
-        '''
-        # Correlation
-        Kernel = Ker
-        m = f.adaptive_avg_pool2d(msk2.detach(), Kernel.size()[-2::])
-        mb = self.Dtype((1 - m).ge(0.9))
+        Kernel_tmp = f.adaptive_avg_pool2d(Kernel_tmp, [15, 27])
+        return [Kernel_tmp] 
+     
+   
+    @torch.jit.export
+    def forward_post(self, Correlation, base_features1, msk_p, m):
+        # Select FG / BG similarity maps
         h_size = 15
         w_size = 27
         c_size = h_size * w_size
-        Correlation, a = self.corr_fun(Kernel, Feature)
-        # Select FG / BG similarity maps
+        mb = self.Dtype((1 - m).ge(0.9))
         corr = Correlation * m.view(-1, c_size, 1, 1)
         corr_b = Correlation * mb.view(-1, c_size, 1, 1)
         # Ranking attention scores
@@ -320,8 +303,86 @@ class RANet(ResNet101):
         features = []
         out = [out_R]
         return out, features
+        
+    def forward(self, x1, Ker, msk2, msk_p, mode):  # vxd  feature * msk *2  _feature_Rf
 
-    def RANet_Multiple_forward_eval(self, x1, Ker, msk2, msk_p, mode=''):  # vxd  feature * msk *2  _feature_Rf
+        if msk2.max() > 1:
+            msk2 = (msk2.ge(1.6)).float()
+            msk_p = (msk_p.ge(1.6)).float()
+        # Current frame feature
+        base_features1 = self.res_forward(x1)
+        Feature_3 = f.normalize(f.max_pool2d(self.L3(base_features1[2]), 2))
+        Feature_4 = f.normalize(self.L4(base_features1[3]))
+        Feature_5 = f.normalize(f.upsample(self.L5(base_features1[4]), scale_factor=2, mode='bilinear'))
+        Feature = f.normalize(self.L_g(torch.cat([Feature_3, Feature_4, Feature_5], dim=1)))
+        
+        '''
+        Kernel_tmp = Ker
+        m = f.adaptive_avg_pool2d(msk2.detach(), Kernel_tmp.size()[-2::])
+        Kernel = Kernel_tmp * m.repeat(1, 512, 1, 1)
+        mb = (1 - m).ge(0.9).float()
+        Kernel_back = Kernel_tmp * mb.repeat(1, 512, 1, 1).float()
+        corr, Kerner = self.corr_fun(Kernel, Feature)
+        corr_b, Kerner_b = self.corr_fun(Kernel_back, Feature)
+        '''
+        # Correlation
+        Kernel = Ker
+        m = f.adaptive_avg_pool2d(msk2.detach(), Kernel.size()[-2::])
+        
+        
+        return Kernel, Feature, base_features1, msk_p, m
+        #Correlation, a = self.corr_fun(Kernel, Feature)
+#        # Select FG / BG similarity maps
+#        corr = Correlation * m.view(-1, c_size, 1, 1)
+#        corr_b = Correlation * mb.view(-1, c_size, 1, 1)
+#        # Ranking attention scores
+#
+#        T_corr = f.max_pool2d(corr, 2).permute(0, 2, 3, 1).view(-1, c_size, h_size, w_size)
+#        T_corr_b = f.max_pool2d(corr_b, 2).permute(0, 2, 3, 1).view(-1, c_size, h_size, w_size)
+#        R_map = (f.relu(self.Ranking(T_corr)) * self.Dtype(m != 0)).view(-1, 1, c_size) * 0.2
+#        R_map_b = (f.relu(self.Ranking(T_corr_b)) * mb).view(-1, 1, c_size) * 0.2
+#
+#        # Rank & select
+#        co_size = corr.size()[2::]
+#        max_only, indices = f.max_pool2d(corr, co_size, return_indices=True)
+#        max_only = max_only.view(-1, 1, c_size) + R_map
+#        m_sorted, m_sorted_idx = max_only.sort(descending=True, dim=2)
+#        corr = torch.cat([co.index_select(0, m_sort[0, 0:256]).unsqueeze(0) for co, m_sort in zip(corr, m_sorted_idx)])
+#        # corr = corr[0].index_select(0, m_sorted_idx[0, 0, 0:256]).unsqueeze(0)
+#        max_only_b, indices = f.max_pool2d(corr_b, co_size, return_indices=True)
+#        max_only_b = max_only_b.view(-1, 1, c_size) + R_map_b
+#        m_sorted, m_sorted_idx = max_only_b.sort(descending=True, dim=2)
+#        corr_b = torch.cat([co.index_select(0, m_sort[0, 0:256]).unsqueeze(0) for co, m_sort in zip(corr_b, m_sorted_idx)])
+#        # corr_b = corr_b[0].index_select(0, m_sorted_idx[0, 0, 0:256]).unsqueeze(0)
+#        # Merge net
+#        fcorr = self.p_2(self.res_1(self.p_1(f.upsample(corr, scale_factor=2, mode='bilinear'))))
+#        fcorr_b = self.p_2(self.res_1(self.p_1(f.upsample(corr_b, scale_factor=2, mode='bilinear'))))
+#
+#        # Decoder
+#        base1 = torch.cat([self.ls13(base_features1[2]),
+#                           self.ls14(base_features1[3]),
+#                           self.ls15(base_features1[4]),
+#                           fcorr,
+#                           fcorr_b,
+#                           f.adaptive_avg_pool2d(msk_p, fcorr.size()[-2::])], 1)
+#        fea1 = self.R1(base1)
+#        base2 = torch.cat([self.ls22(base_features1[1]),
+#                           self.ls23(base_features1[2]),
+#                           self.ls24(base_features1[3]),
+#                           fea1], 1)
+#        fea2 = self.R2(base2)
+#        base3 = torch.cat([self.ls31(base_features1[0]),
+#                           self.ls32(base_features1[1]),
+#                           self.ls33(base_features1[2]),
+#                           fea2], 1)
+#        fea3 = self.R3(base3)
+#        out_R = f.sigmoid(fea3)
+#
+#        features = []
+#        out = [out_R]
+#        return out, features
+
+    def RANet_Multiple_forward_eval(self, x1, Ker, msk2, msk_p, mode):  # vxd  feature * msk *2  _feature_Rf
         if mode == 'first':
             # Exact template features
             x2 = Ker

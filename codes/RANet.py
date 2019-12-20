@@ -57,10 +57,10 @@ def predict_SVOS(model_cuda=None, params='', add_name='', dataset='16val', save_
     inSize2 = 864
     print('save root = ' + save_root)
     if dataset in ['16val', '16trainval', '16all']:
-        model.set_type('single_object')
+        #model.set_type('single_object')
         year = '2016'
     elif dataset in ['17val', '17test_dev']:
-        model.set_type('multi_object')
+        #model.set_type('multi_object')
         year = '2017'
     else:
         assert('dataset error')
@@ -95,11 +95,11 @@ def predict_SVOS(model_cuda=None, params='', add_name='', dataset='16val', save_
 
 if __name__ == '__main__':
 
-    predict_SVOS(params='RANet_video_single.pth', dataset='16val', save_root='../predictions/RANet_Video_16val')
+    #predict_SVOS(params='RANet_video_single.pth', dataset='16val', save_root='../predictions/RANet_Video_16val')
 
-    # predict_SVOS(params='RANet_image_single.pth', dataset='16all', save_root='../predictions/RANet_Image_16all')
+    #predict_SVOS(params='RANet_image_single.pth', dataset='16all', save_root='../predictions/RANet_Image_16all')
 
-    # predict_SVOS(params='RANet_video_multi.pth', dataset='17val', save_root='../predictions/RANet_Video_17val')
+    predict_SVOS(params='RANet_video_single.pth', dataset='17val', save_root='../predictions/RANet_Video_17val')
 
     # predict_SVOS(params='RANet_video_multi.pth', dataset='17test_dev', save_root='../predictions/RANet_Video_17test_dev')
 
