@@ -115,6 +115,7 @@ def test_SVOS_Video_batch(data_loader, model, save_root, threshold=0.5, single_o
         S_name = batch[2][0][0]
         #Key_feature = model(_, Key_frame, _, _, 'first')[0]
         Key_feature = model.forward_first(Key_frame)[0]
+        print("Key_feature", Key_feature.size())
         Frames = batch[0]
         Img_sizes = batch[3]
 
@@ -137,7 +138,8 @@ def test_SVOS_Video_batch(data_loader, model, save_root, threshold=0.5, single_o
         if iteration % max_iter == 0 or iteration == len(data_loader):
             for idx in range(batchsize):
                 Frames_batch['Flags'][idx].append(False)
-            Frames_batch['Sizes'][batchsize] = min(Frames_batch['Sizes'][0:batchsize - 1])
+            #Frames_batch['Sizes'][batchsize] = min(Frames_batch['Sizes'][0:batchsize - 1])
+            Frames_batch['Sizes'][batchsize] = Frames_batch['Sizes'][0]
             start_time = timeit.default_timer() 
             Out_Mask = process_SVOS_batch(Frames_batch, model, threshold, single_object, pre_first_frame)
             end_time = timeit.default_timer()
@@ -147,7 +149,7 @@ def test_SVOS_Video_batch(data_loader, model, save_root, threshold=0.5, single_o
             Img_flags = Frames_batch['Img_flags']
             for Masks, Names, Sizes, Flags in zip(Out_Mask, Image_names, Img_sizes, Img_flags):
                 for mask, name, ss, flag in zip(Masks, Names, Sizes, Flags):
-                    print("image path: ", name)
+                    #print("image path: ", name)
                     folder_name, fname = name.split('/')[-2::]
                     save_path = save_root + '/' + folder_name + '/'
                     if not (os.path.exists(save_path)):
@@ -247,11 +249,13 @@ def process_SVOS_batch(Frames_batch, model, threshold=0.5, single_object=False, 
             else:
                 Flags[i] = tmp
                 tmp +=1
-        inputs = [torch.cat(Img)[index_select], torch.cat(KFea)[index_select], torch.cat(KMsk)[index_select], torch.cat(PMsk)[index_select], 'not']
-        print("inputs[0] :", inputs[0].size(),"inputs[1] :", inputs[1].size(),"inputs[2] :", inputs[2].size(),)
+        inputs = [torch.cat(Img)[index_select], torch.cat(KFea)[index_select], torch.cat(KMsk)[index_select], torch.cat(PMsk)[index_select]]
+        print("inputs[0] :", inputs[0].size(),"inputs[1] :", inputs[1].size(),"inputs[2] :", inputs[2].size(),"inputs[3] :", inputs[3].size(),)
         #outputs, _ = model(*inputs)
         Kernel, Feature, base_features1, msk_p, m = model(*inputs)
-        Correlation = model.correlate(Kernel, Feature)
+        print(Kernel.size(), Feature.size(), m.size())
+        Correlation,a = model.corr_fun(Kernel, Feature)
+        print(Correlation.size())
         outputs, _ = model.forward_post(Correlation, base_features1, msk_p, m)
         Msk2 = [[] for i in range(batchsize)]
         Output = [None if Flags[ids] == -1 else outputs[0][Flags[ids]] for ids in range(batchsize)]

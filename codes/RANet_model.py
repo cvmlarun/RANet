@@ -15,6 +15,7 @@ import random
 from torch.nn import DataParallel as DP
 from RANet_lib.RANet_Model_imagenet import *
 import time
+from typing import List
 
 def make_layer2(input_feature, out_feature, up_scale=1, ksize=3, d=1, groups=1):
     p = int((ksize - 1) / 2)
@@ -162,63 +163,27 @@ class RANet(ResNet101):
 
     def Dtype(self, data):
         return data.float()
-#        if self.fp16:
-#            return torch._C._TensorBase.half(data)
-#        else:
-#            return torch._C._TensorBase.float(data)
-        
+    
+    
 
-#    def _init_net(self):
-#        if self.net_type == 'single_object':
-#            self.forward = self.RANet_Single_forward_eval
-#            print('Single-object mode')
-#        elif self.net_type == 'multi_object':
-#            self.forward = self.RANet_Multiple_forward_eval
-#            print('Multi-object mode')
-#
-#    def set_type(self, type):
-#        if self.net_type != 'single_object' and type == 'single_object':
-#            self.forward = self.RANet_Single_forward_eval
-#            print('Change to single-object mode')
-#        elif self.net_type != 'multi_object' and type == 'multi_object':
-#            self.forward = self.RANet_Multiple_forward_eval
-#            print('Change to multi-object mode')
-#        else:
-#            pass
-
-    def corr_fun(self, Kernel_tmp, Feature, KERs=None):
-        size = Kernel_tmp.size()
-        if len(Feature) == 1:
-            Kernel = Kernel_tmp.view(size[1], size[2] * size[3]).transpose(0, 1)
-            Kernel = Kernel.unsqueeze(2).unsqueeze(3)
-            if not (type(KERs) == type(None)):
-                Kernel = KERs[0]
-            corr = torch.nn.functional.conv2d(Feature, Kernel.contiguous())
-            Kernel = Kernel.unsqueeze(0)
-            
-        
-        else:
-            CORR = []
-            Kernel = []
-            for i in range(len(Feature)):
-                ker = Kernel_tmp[i:i + 1]
-                fea = Feature[i:i + 1]
-                ker = ker.view(size[1], size[2] * size[3]).transpose(0, 1)
-                ker = ker.unsqueeze(2).unsqueeze(3)
-                if not (type(KERs) == type(None)):
-                    ker = torch.cat([ker, KERs[i]], 0)
-                co = f.conv2d(fea, ker.contiguous())
-                CORR.append(co)
-                ker = ker.unsqueeze(0)
-                Kernel.append(ker)
-            corr = torch.cat(CORR, 0)
-            Kernel = torch.cat(Kernel, 0)
-        return corr, Kernel
 
     def to_kernel(self, feature):
         size = feature.size()
         return feature.view(size[1], size[2] * size[3]).transpose(0, 1).unsqueeze(2).unsqueeze(3).contiguous()
 
+
+    @torch.jit.export
+    def corr_fun(self, Kernel_tmp, Feature):
+        size = Kernel_tmp.size()
+        #print("Feature :", len(Feature))
+        #if len(Feature) == 1:
+        Kernel = Kernel_tmp.view(size[1], size[2] * size[3]).transpose(0, 1)
+        Kernel = Kernel.unsqueeze(2).unsqueeze(3)
+
+        corr = torch.nn.functional.conv2d(Feature, Kernel.contiguous())
+        Kernel = Kernel.unsqueeze(0)
+        return corr, Kernel
+    
     def correlate(self, Kernel, Feature):
         corr = torch.nn.functional.conv2d(Feature, Kernel,stride=1)
         return corr
@@ -249,7 +214,7 @@ class RANet(ResNet101):
      
    
     @torch.jit.export
-    def forward_post(self, Correlation, base_features1, msk_p, m):
+    def forward_post(self, Correlation, base_features1: List[torch.Tensor], msk_p, m):
         # Select FG / BG similarity maps
         h_size = 15
         w_size = 27
@@ -304,7 +269,7 @@ class RANet(ResNet101):
         out = [out_R]
         return out, features
         
-    def forward(self, x1, Ker, msk2, msk_p, mode):  # vxd  feature * msk *2  _feature_Rf
+    def forward(self, x1, Ker, msk2, msk_p):  # vxd  feature * msk *2  _feature_Rf
 
         if msk2.max() > 1:
             msk2 = (msk2.ge(1.6)).float()

@@ -29,7 +29,7 @@ parser.add_argument('--threads', type=int, default=16, help='number of threads f
 parser.add_argument('--workfolder', default='../models/')
 parser.add_argument('--savePName', default=net_name)
 parser.add_argument('--net_type', default='single_object')
-parser.add_argument('--fp16', default=True)
+parser.add_argument('--fp16', default=False)
 print('===> Setting ......')
 opt = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
